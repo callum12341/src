@@ -1,4 +1,4 @@
-// src/App.js - Updated with Full Email Integration
+// src/App.js - Final Version with Complete Task Integration
 import React, { useState, useMemo, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
@@ -19,20 +19,26 @@ import {
   EmailSetupModule 
 } from './components/emails';
 
+// Import task components
+import { 
+  TasksModule, 
+  TaskForm 
+} from './components/tasks';
+
 // Import custom hooks
 import { useNotification } from './hooks/useNotification';
 import { useCustomers } from './hooks/useCustomers';
 import { useEmails } from './hooks/useEmails';
+import { useTasks } from './hooks/useTasks';
 
 // Import data
-import { initialCustomers, initialTasks, initialEmails } from './data/sampleData';
+import { initialCustomers, initialTasks, initialEmails, staffMembers } from './data/sampleData';
 import { emailTemplates } from './data/emailTemplates';
 
 const CRM = () => {
   // State management
   const [activeModule, setActiveModule] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
-  const [tasks, setTasks] = useState(initialTasks);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('');
@@ -47,6 +53,7 @@ const CRM = () => {
 
   // Use custom hooks
   const { notification, showNotification, hideNotification, showSuccess, showError } = useNotification();
+  
   const { 
     customers, 
     isLoading: isCustomersLoading,
@@ -68,6 +75,18 @@ const CRM = () => {
     queueEmail,
     clearQueue
   } = useEmails(initialEmails);
+
+  const {
+    tasks,
+    setTasks,
+    isLoading: isTasksLoading,
+    addTask,
+    updateTask,
+    deleteTask,
+    updateTaskStatus,
+    assignTask,
+    getTaskStats
+  } = useTasks(initialTasks);
 
   // Check email configuration on mount
   useEffect(() => {
@@ -139,6 +158,54 @@ const CRM = () => {
     }
   };
 
+  // Task handlers
+  const handleAddTask = async (taskData) => {
+    const result = await addTask(taskData, isDatabaseConnected);
+    if (result.success) {
+      showSuccess(`Task "${result.task.title}" created successfully!`);
+      closeModal();
+    } else {
+      showError(`Failed to create task: ${result.error}`);
+    }
+  };
+
+  const handleUpdateTask = async (taskData) => {
+    const result = await updateTask(selectedItem.id, taskData, isDatabaseConnected);
+    if (result.success) {
+      showSuccess(`Task "${taskData.title}" updated successfully!`);
+      closeModal();
+    } else {
+      showError(`Failed to update task: ${result.error}`);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    const result = await deleteTask(taskId, isDatabaseConnected);
+    if (result.success) {
+      showSuccess(`Task "${result.task.title}" deleted successfully!`);
+    } else {
+      showError(`Failed to delete task: ${result.error}`);
+    }
+  };
+
+  const handleUpdateTaskStatus = async (taskId, status) => {
+    const result = await updateTaskStatus(taskId, status, isDatabaseConnected);
+    if (result.success) {
+      showSuccess(`Task status updated to "${status}"!`);
+    } else {
+      showError(`Failed to update task status: ${result.error}`);
+    }
+  };
+
+  const handleAssignTask = async (taskId, assignee) => {
+    const result = await assignTask(taskId, assignee, isDatabaseConnected);
+    if (result.success) {
+      showSuccess(`Task assigned to ${assignee}!`);
+    } else {
+      showError(`Failed to assign task: ${result.error}`);
+    }
+  };
+
   // Email handlers
   const handleSendEmail = async (emailData) => {
     try {
@@ -194,8 +261,6 @@ const CRM = () => {
   };
 
   const handleSaveDraft = async (emailData) => {
-    // For now, just show a success message
-    // In a real app, you'd save to database
     showSuccess('Draft saved!');
   };
 
@@ -228,7 +293,6 @@ const CRM = () => {
       const result = await response.json();
 
       if (result.success) {
-        // Process results and update UI
         result.results.forEach((emailResult, index) => {
           if (emailResult.success) {
             const originalEmail = emailQueue[index];
@@ -248,7 +312,6 @@ const CRM = () => {
           }
         });
 
-        // Clear successful emails from queue
         const failedEmails = emailQueue.filter((_, index) => 
           !result.results[index].success
         );
@@ -304,7 +367,8 @@ const CRM = () => {
       task.title.toLowerCase().includes(query) ||
       task.description.toLowerCase().includes(query) ||
       task.customerName.toLowerCase().includes(query) ||
-      task.assignedTo.toLowerCase().includes(query)
+      task.assignedTo.toLowerCase().includes(query) ||
+      task.tags.some(tag => tag.toLowerCase().includes(query))
     );
     
     const emailResults = emails.filter(email =>
@@ -323,6 +387,8 @@ const CRM = () => {
     switch (modalType) {
       case 'add-customer': return 'Add New Customer';
       case 'edit-customer': return 'Edit Customer';
+      case 'add-task': return 'Create New Task';
+      case 'edit-task': return 'Edit Task';
       case 'compose-email': return 'Compose Email';
       default: return 'Modal';
     }
@@ -401,6 +467,7 @@ const CRM = () => {
               emails={emails} 
               isDatabaseConnected={isDatabaseConnected}
               emailConfig={emailConfig}
+              getTaskStats={getTaskStats}
             />
           )}
           
@@ -411,6 +478,19 @@ const CRM = () => {
               onEdit={(customer) => openModal('edit-customer', customer)}
               onDelete={handleDeleteCustomer}
               onSendEmail={(customer) => openModal('compose-email', { customerId: customer.id, to: customer.email })}
+            />
+          )}
+
+          {!searchQuery && activeModule === 'tasks' && (
+            <TasksModule 
+              tasks={tasks}
+              customers={customers}
+              staffMembers={staffMembers}
+              onAdd={() => openModal('add-task')}
+              onEdit={(task) => openModal('edit-task', task)}
+              onDelete={handleDeleteTask}
+              onUpdateStatus={handleUpdateTaskStatus}
+              onAssignTask={handleAssignTask}
             />
           )}
 
@@ -445,14 +525,6 @@ const CRM = () => {
             />
           )}
           
-          {/* Placeholder modules */}
-          {!searchQuery && activeModule === 'tasks' && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold mb-4">Tasks Module</h3>
-              <p className="text-gray-600">Tasks module will be extracted next...</p>
-            </div>
-          )}
-          
           {!searchQuery && activeModule === 'imap-debug' && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-4">IMAP Debug</h3>
@@ -475,7 +547,7 @@ const CRM = () => {
         </Modal>
       )}
 
-      {/* Customer and Email Modals */}
+      {/* All Modals */}
       {showModal && (
         <Modal onClose={closeModal} title={getModalTitle(modalType)} maxWidth="max-w-4xl">
           {modalType === 'add-customer' && (
@@ -483,6 +555,21 @@ const CRM = () => {
           )}
           {modalType === 'edit-customer' && selectedItem && (
             <CustomerForm customer={selectedItem} onSubmit={handleUpdateCustomer} />
+          )}
+          {modalType === 'add-task' && (
+            <TaskForm 
+              customers={customers}
+              staffMembers={staffMembers}
+              onSubmit={handleAddTask} 
+            />
+          )}
+          {modalType === 'edit-task' && selectedItem && (
+            <TaskForm 
+              task={selectedItem}
+              customers={customers}
+              staffMembers={staffMembers}
+              onSubmit={handleUpdateTask} 
+            />
           )}
           {modalType === 'compose-email' && (
             <ComposeEmailModule 
@@ -501,48 +588,127 @@ const CRM = () => {
   );
 };
 
-// Temporary placeholder components (TODO: Extract these)
-const Dashboard = ({ customers, tasks, emails, isDatabaseConnected, emailConfig }) => (
-  <div className="space-y-6">
-    {/* Stats Cards */}
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h4 className="font-medium text-blue-800">Customers</h4>
-        <p className="text-2xl font-bold text-blue-600">{customers.length}</p>
+// Updated Dashboard with Task Stats
+const Dashboard = ({ customers, tasks, emails, isDatabaseConnected, emailConfig, getTaskStats }) => {
+  const taskStats = getTaskStats();
+  
+  return (
+    <div className="space-y-6">
+      {/* Main Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h4 className="font-medium text-blue-800">Customers</h4>
+          <p className="text-2xl font-bold text-blue-600">{customers.length}</p>
+          <p className="text-sm text-gray-500 mt-1">Total customers</p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <h4 className="font-medium text-green-800">Tasks</h4>
+          <p className="text-2xl font-bold text-green-600">{tasks.length}</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {taskStats.overdue > 0 && (
+              <span className="text-red-600">{taskStats.overdue} overdue</span>
+            )}
+            {taskStats.dueToday > 0 && (
+              <span className="text-orange-600">{taskStats.dueToday} due today</span>
+            )}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <h4 className="font-medium text-purple-800">Emails</h4>
+          <p className="text-2xl font-bold text-purple-600">{emails.length}</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {emails.filter(e => !e.isRead).length} unread
+          </p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <h4 className="font-medium text-yellow-800">Active Tasks</h4>
+          <p className="text-2xl font-bold text-yellow-600">{taskStats.inProgress}</p>
+          <p className="text-sm text-gray-500 mt-1">In progress</p>
+        </div>
       </div>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h4 className="font-medium text-green-800">Tasks</h4>
-        <p className="text-2xl font-bold text-green-600">{tasks.length}</p>
-      </div>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h4 className="font-medium text-purple-800">Emails</h4>
-        <p className="text-2xl font-bold text-purple-600">{emails.length}</p>
-      </div>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h4 className="font-medium text-yellow-800">Unread</h4>
-        <p className="text-2xl font-bold text-yellow-600">
-          {emails.filter(e => !e.isRead).length}
-        </p>
-      </div>
-    </div>
 
-    {/* Recent Activity */}
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
-      <div className="space-y-3">
-        {emails.slice(0, 5).map(email => (
-          <div key={email.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium">{email.subject}</p>
-              <p className="text-sm text-gray-600">{email.customerName}</p>
-            </div>
-            <span className="text-xs text-gray-500">{email.timestamp}</span>
+      {/* Task Status Breakdown */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4">Task Overview</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-yellow-600">{taskStats.pending}</div>
+            <div className="text-sm text-gray-500">Pending</div>
           </div>
-        ))}
+          <div className="text-center">
+            <div className="text-2xl font-bold text-blue-600">{taskStats.inProgress}</div>
+            <div className="text-sm text-gray-500">In Progress</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{taskStats.completed}</div>
+            <div className="text-sm text-gray-500">Completed</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-red-600">{taskStats.overdue}</div>
+            <div className="text-sm text-gray-500">Overdue</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-orange-600">{taskStats.dueToday}</div>
+            <div className="text-sm text-gray-500">Due Today</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Tasks */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Recent Tasks</h3>
+          <div className="space-y-3">
+            {tasks.slice(0, 5).map(task => (
+              <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex-1">
+                  <p className="font-medium text-sm">{task.title}</p>
+                  <p className="text-xs text-gray-600">{task.assignedTo}</p>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    task.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                    task.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {task.status}
+                  </span>
+                  <p className="text-xs text-gray-500 mt-1">{task.dueDate}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Emails */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Recent Emails</h3>
+          <div className="space-y-3">
+            {emails.slice(0, 5).map(email => (
+              <div key={email.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex-1">
+                  <p className="font-medium text-sm">{email.subject}</p>
+                  <p className="text-xs text-gray-600">{email.customerName}</p>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    email.type === 'outgoing' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {email.type === 'outgoing' ? 'Sent' : 'Received'}
+                  </span>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {new Date(email.timestamp).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const SearchResults = ({ results, onClearSearch }) => (
   <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -565,7 +731,7 @@ const SearchResults = ({ results, onClearSearch }) => (
         <h4 className="font-medium mb-2">Tasks ({results.tasks.length})</h4>
         {results.tasks.slice(0, 3).map(task => (
           <div key={task.id} className="text-sm text-gray-600 mb-1">
-            {task.title}
+            {task.title} - {task.status}
           </div>
         ))}
       </div>
