@@ -1,8 +1,8 @@
-// src/App.js - Updated with Header and Customer Components
+// src/App.js - Updated with Full Email Integration
 import React, { useState, useMemo, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
-// Import new common components
+// Import common components
 import Sidebar from './components/common/Sidebar';
 import Header from './components/common/Header';
 import Notification from './components/common/Notification';
@@ -12,132 +12,31 @@ import Modal from './components/common/Modal';
 import CustomersModule from './components/customers';
 import { CustomerForm } from './components/customers';
 
+// Import email components
+import { 
+  EmailModule, 
+  ComposeEmailModule, 
+  EmailSetupModule 
+} from './components/emails';
+
 // Import custom hooks
 import { useNotification } from './hooks/useNotification';
 import { useCustomers } from './hooks/useCustomers';
+import { useEmails } from './hooks/useEmails';
 
-// Keep existing component imports for modules we haven't extracted yet
-// TODO: Extract these next
-// import TasksModule from './components/tasks';
-// import EmailModule from './components/emails';
-// etc...
-
-// Sample data (TODO: move to data files)
-const initialCustomersData = [
-  {
-    id: 1,
-    name: 'John Smith',
-    email: 'john.smith@example.com',
-    phone: '+1-555-0123',
-    company: 'Acme Corp',
-    address: '123 Main St, City, State 12345',
-    status: 'Active',
-    source: 'WooCommerce',
-    created: '2024-01-15',
-    lastContact: '2024-08-10',
-    orderValue: 2500.00,
-    tags: ['VIP', 'Enterprise']
-  },
-  {
-    id: 2,
-    name: 'Sarah Johnson',
-    email: 'sarah.j@techstart.com',
-    phone: '+1-555-0124',
-    company: 'TechStart Inc',
-    address: '456 Oak Ave, City, State 12345',
-    status: 'Lead',
-    source: 'Manual',
-    created: '2024-02-20',
-    lastContact: '2024-08-12',
-    orderValue: 1200.00,
-    tags: ['Hot Lead']
-  }
-];
-
-const initialTasks = [
-  {
-    id: 1,
-    title: 'Follow up on proposal',
-    description: 'Send follow-up email regarding the enterprise package proposal',
-    customerId: 1,
-    customerName: 'John Smith',
-    assignedTo: 'Mike Wilson',
-    assignedToEmail: 'mike@company.com',
-    priority: 'High',
-    status: 'In Progress',
-    dueDate: '2024-08-20',
-    created: '2024-08-15',
-    tags: ['Sales', 'Follow-up']
-  },
-  {
-    id: 2,
-    title: 'Schedule demo call',
-    description: 'Set up product demo for potential client',
-    customerId: 2,
-    customerName: 'Sarah Johnson',
-    assignedTo: 'Lisa Chen',
-    assignedToEmail: 'lisa@company.com',
-    priority: 'Medium',
-    status: 'Pending',
-    dueDate: '2024-08-18',
-    created: '2024-08-14',
-    tags: ['Demo', 'Sales']
-  }
-];
-
-const initialEmails = [
-  {
-    id: 1,
-    customerId: 1,
-    customerName: 'John Smith',
-    subject: 'Re: Enterprise Package Inquiry',
-    from: 'john.smith@example.com',
-    to: 'sales@company.com',
-    cc: '',
-    bcc: '',
-    body: 'Hi, I am interested in learning more about your enterprise package. Could you please send me more details about pricing and features?',
-    timestamp: '2024-08-15 10:30:00',
-    isRead: true,
-    isStarred: false,
-    thread: 'thread_1',
-    type: 'incoming',
-    status: 'delivered',
-    priority: 'normal',
-    attachments: []
-  },
-  {
-    id: 2,
-    customerId: 2,
-    customerName: 'Sarah Johnson',
-    subject: 'Welcome to our CRM!',
-    from: 'sales@company.com',
-    to: 'sarah.j@techstart.com',
-    cc: '',
-    bcc: '',
-    body: 'Thank you for your interest in our services. We are excited to work with you!',
-    timestamp: '2024-08-14 14:15:00',
-    isRead: true,
-    isStarred: false,
-    thread: 'thread_2',
-    type: 'outgoing',
-    status: 'sent',
-    priority: 'normal',
-    smtpMessageId: 'msg_12345',
-    attachments: []
-  }
-];
+// Import data
+import { initialCustomers, initialTasks, initialEmails } from './data/sampleData';
+import { emailTemplates } from './data/emailTemplates';
 
 const CRM = () => {
   // State management
   const [activeModule, setActiveModule] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [tasks, setTasks] = useState(initialTasks);
-  const [emails, setEmails] = useState(initialEmails);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
-  const [emailQueue, setEmailQueue] = useState([]);
   const [showDatabaseManager, setShowDatabaseManager] = useState(false);
   const [isDatabaseConnected, setIsDatabaseConnected] = useState(false);
   const [emailConfig, setEmailConfig] = useState({
@@ -154,7 +53,21 @@ const CRM = () => {
     addCustomer, 
     updateCustomer, 
     deleteCustomer 
-  } = useCustomers(initialCustomersData);
+  } = useCustomers(initialCustomers);
+  
+  const {
+    emails,
+    setEmails,
+    emailQueue,
+    setEmailQueue,
+    addEmail,
+    updateEmail,
+    deleteEmail,
+    markEmailAsRead,
+    toggleEmailStar,
+    queueEmail,
+    clearQueue
+  } = useEmails(initialEmails);
 
   // Check email configuration on mount
   useEffect(() => {
@@ -193,7 +106,7 @@ const CRM = () => {
     setModalType('');
   };
 
-  // Customer handlers using the new hook
+  // Customer handlers
   const handleAddCustomer = async (customerData) => {
     const result = await addCustomer(customerData, isDatabaseConnected);
     if (result.success) {
@@ -218,11 +131,82 @@ const CRM = () => {
     const result = await deleteCustomer(customerId, isDatabaseConnected);
     if (result.success) {
       showSuccess(`Customer "${result.customer.name}" deleted successfully!`);
-      // Also remove related tasks
+      // Also remove related tasks and emails
       setTasks(prev => prev.filter(t => t.customerId !== customerId));
+      setEmails(prev => prev.filter(e => e.customerId !== customerId));
     } else {
       showError(`Failed to delete customer: ${result.error}`);
     }
+  };
+
+  // Email handlers
+  const handleSendEmail = async (emailData) => {
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailData)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const newEmail = {
+          id: Math.max(...emails.map(e => e.id), 0) + 1,
+          ...emailData,
+          timestamp: new Date().toISOString(),
+          isRead: true,
+          isStarred: false,
+          thread: `thread_${Date.now()}`,
+          type: 'outgoing',
+          status: 'sent',
+          smtpMessageId: result.messageId,
+          customerName: emailData.customerId ? 
+            customers.find(c => c.id === emailData.customerId)?.name || 'Unknown' : 
+            'Unknown'
+        };
+
+        addEmail(newEmail);
+        showSuccess('Email sent successfully!');
+        closeModal();
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error('Send email error:', error);
+      showError('Failed to send email: ' + error.message);
+    }
+  };
+
+  const handleQueueEmail = async (emailData) => {
+    const queuedEmail = {
+      ...emailData,
+      id: Math.max(...emailQueue.map(e => e.id || 0), 0) + 1,
+      queuedAt: new Date().toISOString(),
+      customerName: emailData.customerId ? 
+        customers.find(c => c.id === emailData.customerId)?.name || 'Unknown' : 
+        'Unknown'
+    };
+
+    queueEmail(queuedEmail);
+    showSuccess('Email added to queue!');
+    closeModal();
+  };
+
+  const handleSaveDraft = async (emailData) => {
+    // For now, just show a success message
+    // In a real app, you'd save to database
+    showSuccess('Draft saved!');
+  };
+
+  const handleReplyToEmail = (email) => {
+    const replyData = {
+      to: email.from,
+      subject: email.subject.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
+      body: `\n\n--- Original Message ---\nFrom: ${email.from}\nSent: ${email.timestamp}\nSubject: ${email.subject}\n\n${email.body}`,
+      customerId: email.customerId
+    };
+    openModal('compose-email', replyData);
   };
 
   // Process email queue function
@@ -237,9 +221,7 @@ const CRM = () => {
     try {
       const response = await fetch('/api/bulk-email', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emails: emailQueue })
       });
 
@@ -253,7 +235,7 @@ const CRM = () => {
             const newEmail = {
               id: Math.max(...emails.map(e => e.id), 0) + index + 1,
               ...originalEmail,
-              timestamp: new Date().toLocaleString(),
+              timestamp: new Date().toISOString(),
               isRead: true,
               isStarred: false,
               thread: `thread_${Date.now()}_${index}`,
@@ -262,7 +244,7 @@ const CRM = () => {
               smtpMessageId: emailResult.messageId,
               attachments: originalEmail.attachments || []
             };
-            setEmails(prev => [newEmail, ...prev]);
+            addEmail(newEmail);
           }
         });
 
@@ -282,6 +264,26 @@ const CRM = () => {
     } catch (error) {
       console.error('Bulk email error:', error);
       showError('Failed to process email queue: ' + error.message);
+    }
+  };
+
+  // Email configuration handlers
+  const handleUpdateEmailConfig = (newConfig) => {
+    setEmailConfig(newConfig);
+  };
+
+  const handleTestEmailConnection = async (provider, config) => {
+    try {
+      const response = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, config })
+      });
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      return { success: false, message: error.message };
     }
   };
 
@@ -321,8 +323,6 @@ const CRM = () => {
     switch (modalType) {
       case 'add-customer': return 'Add New Customer';
       case 'edit-customer': return 'Edit Customer';
-      case 'add-task': return 'Create New Task';
-      case 'edit-task': return 'Edit Task';
       case 'compose-email': return 'Compose Email';
       default: return 'Modal';
     }
@@ -410,36 +410,46 @@ const CRM = () => {
               onAdd={() => openModal('add-customer')}
               onEdit={(customer) => openModal('edit-customer', customer)}
               onDelete={handleDeleteCustomer}
-              onSendEmail={(customer) => openModal('compose-email', customer)}
+              onSendEmail={(customer) => openModal('compose-email', { customerId: customer.id, to: customer.email })}
+            />
+          )}
+
+          {!searchQuery && activeModule === 'emails' && (
+            <EmailModule 
+              emails={emails}
+              customers={customers}
+              onCompose={() => openModal('compose-email')}
+              onReply={handleReplyToEmail}
+              onDelete={deleteEmail}
+              onMarkAsRead={markEmailAsRead}
+              onToggleStar={toggleEmailStar}
+            />
+          )}
+
+          {!searchQuery && activeModule === 'compose' && (
+            <ComposeEmailModule 
+              customers={customers}
+              emailTemplates={emailTemplates}
+              onSendEmail={handleSendEmail}
+              onSaveDraft={handleSaveDraft}
+              onQueueEmail={handleQueueEmail}
+            />
+          )}
+
+          {!searchQuery && activeModule === 'email-setup' && (
+            <EmailSetupModule 
+              emailConfig={emailConfig}
+              onUpdateConfig={handleUpdateEmailConfig}
+              onTestConnection={handleTestEmailConnection}
+              showNotification={showNotification}
             />
           )}
           
-          {/* TODO: Add other modules here */}
+          {/* Placeholder modules */}
           {!searchQuery && activeModule === 'tasks' && (
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-4">Tasks Module</h3>
               <p className="text-gray-600">Tasks module will be extracted next...</p>
-            </div>
-          )}
-          
-          {!searchQuery && activeModule === 'emails' && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold mb-4">Email Module</h3>
-              <p className="text-gray-600">Email module will be extracted next...</p>
-            </div>
-          )}
-          
-          {!searchQuery && activeModule === 'compose' && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold mb-4">Compose Email</h3>
-              <p className="text-gray-600">Compose module will be extracted next...</p>
-            </div>
-          )}
-          
-          {!searchQuery && activeModule === 'email-setup' && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold mb-4">Email Setup</h3>
-              <p className="text-gray-600">Email setup module will be extracted next...</p>
             </div>
           )}
           
@@ -465,24 +475,26 @@ const CRM = () => {
         </Modal>
       )}
 
-      {/* Customer Modals */}
+      {/* Customer and Email Modals */}
       {showModal && (
-        <Modal onClose={closeModal} title={getModalTitle(modalType)}>
+        <Modal onClose={closeModal} title={getModalTitle(modalType)} maxWidth="max-w-4xl">
           {modalType === 'add-customer' && (
             <CustomerForm onSubmit={handleAddCustomer} />
           )}
           {modalType === 'edit-customer' && selectedItem && (
             <CustomerForm customer={selectedItem} onSubmit={handleUpdateCustomer} />
           )}
-          {modalType === 'compose-email' && selectedItem && (
-            <div className="p-6">
-              <h4 className="text-lg font-semibold mb-4">
-                Compose Email to {selectedItem.name}
-              </h4>
-              <p className="text-gray-600">Email compose form will be extracted next...</p>
-            </div>
+          {modalType === 'compose-email' && (
+            <ComposeEmailModule 
+              customers={customers}
+              emailTemplates={emailTemplates}
+              onSendEmail={handleSendEmail}
+              onSaveDraft={handleSaveDraft}
+              onQueueEmail={handleQueueEmail}
+              initialData={selectedItem}
+              onCancel={closeModal}
+            />
           )}
-          {/* TODO: Add other modal types */}
         </Modal>
       )}
     </div>
@@ -491,20 +503,42 @@ const CRM = () => {
 
 // Temporary placeholder components (TODO: Extract these)
 const Dashboard = ({ customers, tasks, emails, isDatabaseConnected, emailConfig }) => (
-  <div className="bg-white rounded-lg shadow p-6">
-    <h3 className="text-lg font-semibold mb-4">Dashboard</h3>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="bg-blue-50 p-4 rounded-lg">
+  <div className="space-y-6">
+    {/* Stats Cards */}
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="bg-white rounded-lg shadow p-6">
         <h4 className="font-medium text-blue-800">Customers</h4>
         <p className="text-2xl font-bold text-blue-600">{customers.length}</p>
       </div>
-      <div className="bg-green-50 p-4 rounded-lg">
+      <div className="bg-white rounded-lg shadow p-6">
         <h4 className="font-medium text-green-800">Tasks</h4>
         <p className="text-2xl font-bold text-green-600">{tasks.length}</p>
       </div>
-      <div className="bg-purple-50 p-4 rounded-lg">
+      <div className="bg-white rounded-lg shadow p-6">
         <h4 className="font-medium text-purple-800">Emails</h4>
         <p className="text-2xl font-bold text-purple-600">{emails.length}</p>
+      </div>
+      <div className="bg-white rounded-lg shadow p-6">
+        <h4 className="font-medium text-yellow-800">Unread</h4>
+        <p className="text-2xl font-bold text-yellow-600">
+          {emails.filter(e => !e.isRead).length}
+        </p>
+      </div>
+    </div>
+
+    {/* Recent Activity */}
+    <div className="bg-white rounded-lg shadow p-6">
+      <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
+      <div className="space-y-3">
+        {emails.slice(0, 5).map(email => (
+          <div key={email.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div>
+              <p className="font-medium">{email.subject}</p>
+              <p className="text-sm text-gray-600">{email.customerName}</p>
+            </div>
+            <span className="text-xs text-gray-500">{email.timestamp}</span>
+          </div>
+        ))}
       </div>
     </div>
   </div>
@@ -518,7 +552,32 @@ const SearchResults = ({ results, onClearSearch }) => (
         Clear search
       </button>
     </div>
-    <p className="text-gray-600">Search results component will be extracted next...</p>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div>
+        <h4 className="font-medium mb-2">Customers ({results.customers.length})</h4>
+        {results.customers.slice(0, 3).map(customer => (
+          <div key={customer.id} className="text-sm text-gray-600 mb-1">
+            {customer.name} - {customer.email}
+          </div>
+        ))}
+      </div>
+      <div>
+        <h4 className="font-medium mb-2">Tasks ({results.tasks.length})</h4>
+        {results.tasks.slice(0, 3).map(task => (
+          <div key={task.id} className="text-sm text-gray-600 mb-1">
+            {task.title}
+          </div>
+        ))}
+      </div>
+      <div>
+        <h4 className="font-medium mb-2">Emails ({results.emails.length})</h4>
+        {results.emails.slice(0, 3).map(email => (
+          <div key={email.id} className="text-sm text-gray-600 mb-1">
+            {email.subject}
+          </div>
+        ))}
+      </div>
+    </div>
   </div>
 );
 
